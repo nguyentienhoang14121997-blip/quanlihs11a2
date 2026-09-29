@@ -457,9 +457,11 @@ function App(){
   const [tdView,setTdView] = useState('week');
   const [tkView,setTkView] = useState('month');
   const [modal,setModal] = useState(null);
+  const [modalSeq,setModalSeq] = useState(0);
+  function openModal(m){ setModalSeq(n=>n+1); setModal(m); }
   const [err,setErr] = useState('');
   const [nudge,setNudge] = useState(false);
-  useEffect(()=>{ if(nudge && db){ setModal({type:'changePassword', first:true}); setNudge(false); } },[nudge,db]);
+  useEffect(()=>{ if(nudge && db){ openModal({type:'changePassword', first:true}); setNudge(false); } },[nudge,db]);
 
   useEffect(()=>{
     (async ()=>{
@@ -507,9 +509,9 @@ function App(){
       if(!form.text || isNaN(form.diem)){ setErr('Vui lòng nhập nội dung và điểm hợp lệ.'); return; }
       if(!form.date){ setErr('Vui lòng chọn ngày.'); return; }
       if(modal.edit){
-        await db.doc('violations/'+modal.edit.id).set({ma:modal.student.ma, text:form.text, diem:form.diem, date:form.date, note:form.note, by:session.role, at:modal.edit.at||Date.now()});
+        await db.doc('violations/'+modal.edit.id).set({ma:modal.student.ma, text:form.text, diem:form.diem, date:form.date, note:form.note||'', by:session.role, at:modal.edit.at||Date.now()});
       } else {
-        await db.collection('violations').add({ma:modal.student.ma, text:form.text, diem:form.diem, date:form.date, note:form.note, by:session.role, at:Date.now()});
+        await db.collection('violations').add({ma:modal.student.ma, text:form.text, diem:form.diem, date:form.date, note:form.note||'', by:session.role, at:Date.now()});
       }
       setModal(null); await refresh();
     } else if(modal.type==='editStudent'){
@@ -521,7 +523,7 @@ function App(){
       await db.doc('students/'+modal.data.ma).delete();
       setModal(null); await refresh();
     } else if(modal.type==='viewStudent' && form && form.__editProfile){
-      setModal({type:'editStudent', ma:modal.data.ma, data:modal.data});
+      openModal({type:'editStudent', ma:modal.data.ma, data:modal.data});
     } else if(modal.type==='changePassword'){
       if(!form.next || form.next.length<4){ setErr('Mật khẩu mới phải có ít nhất 4 ký tự.'); return; }
       if(!/\p{Lu}/u.test(form.next)){ setErr('Mật khẩu mới phải có ít nhất 1 chữ cái viết in hoa.'); return; }
@@ -564,7 +566,7 @@ function App(){
     <div>
       <div className="top">
         <div className="brand">CSDL Lớp 11A2</div>
-        <div className="who">{roleLabel}{me?' · '+me.ten:''}{restrictToTo?' · Tổ '+me.to:''} <button onClick={()=>{setErr('');setModal({type:'changePassword'});}}>🔑 Đổi MK</button> <button onClick={logout}>Đăng xuất</button></div>
+        <div className="who">{roleLabel}{me?' · '+me.ten:''}{restrictToTo?' · Tổ '+me.to:''} <button onClick={()=>{setErr('');openModal({type:'changePassword'});}}>🔑 Đổi MK</button> <button onClick={logout}>Đăng xuất</button></div>
       </div>
       <div className="wrap">
         {(session.role==='hs' || session.role==='ph') ? (
@@ -588,17 +590,17 @@ function App(){
             </div>}
             {tab==='list' &&
               <Roster students={scopedStudents} canEditRoster={canEditRoster} db={db} onImported={refresh}
-                  onAdd={()=>{setErr('');setModal({type:'editStudent',ma:null,data:{}});}}
-                  onEdit={s=>{setErr('');setModal({type:'editStudent',ma:s.ma,data:s});}}
-                  onDel={s=>{setErr('');setModal({type:'confirmDel',data:s});}}
-                  onView={s=>{setErr('');setModal({type:'viewStudent',data:s,total:totalOf(s.ma,violations),myV:violations.filter(v=>v.ma===s.ma),canEdit:canEditRoster});}}
+                  onAdd={()=>{setErr('');openModal({type:'editStudent',ma:null,data:{}});}}
+                  onEdit={s=>{setErr('');openModal({type:'editStudent',ma:s.ma,data:s});}}
+                  onDel={s=>{setErr('');openModal({type:'confirmDel',data:s});}}
+                  onView={s=>{setErr('');openModal({type:'viewStudent',data:s,total:totalOf(s.ma,violations),myV:violations.filter(v=>v.ma===s.ma),canEdit:canEditRoster});}}
                   onQuickChucvu={quickChucvu}
                 />
             }
             {tab==='att' && canLog && <AttendanceTab db={db} students={scopedStudents} attendance={attendance} session={session} onSaved={refresh}/>}
             {tab==='td' && <ThiDuaTab students={scopedStudents} violations={violations} canLog={canLog} scopedMas={scopedMas} view={tdView}
-                onAdd={(s,defDate)=>{setErr('');setModal({type:'logViolation',student:s,defaultDate:defDate});}}
-                onEditEntry={(v,s)=>{setErr('');setModal({type:'logViolation',student:s||{ten:v.ma,ma:v.ma},edit:v});}}
+                onAdd={(s,defDate)=>{setErr('');openModal({type:'logViolation',student:s,defaultDate:defDate});}}
+                onEditEntry={(v,s)=>{setErr('');openModal({type:'logViolation',student:s||{ten:v.ma,ma:v.ma},edit:v});}}
                 onDelEntry={delViolation}
               />}
             {tab==='tk' && <SummaryTab students={scopedStudents} violations={violations} attendance={attendance} view={tkView}/>}
@@ -606,7 +608,7 @@ function App(){
           </>
         )}
       </div>
-      <Modal modal={modal} err={err} onClose={()=>{setModal(null); setErr('');}} onSave={handleSave}/>
+      <Modal key={modalSeq} modal={modal} err={err} onClose={()=>{setModal(null); setErr('');}} onSave={handleSave}/>
     </div>
   );
 }
@@ -784,6 +786,22 @@ function ThiDuaTab({students, violations, canLog, scopedMas, view, onAdd, onEdit
   const weekRowsF = useMemo(()=>flt(weekRows), [weekRows, q]);
   const monthRowsF = useMemo(()=>flt(monthRows), [monthRows, q]);
 
+  const [eq,setEq] = useState('');
+  const [eTo,setETo] = useState('');
+  const toOptions = useMemo(()=>[...new Set(students.map(s=>s.to).filter(x=>x!=null))].sort((a,b)=>a-b), [students]);
+  const entryCounts = useMemo(()=>{
+    const m={}; weekEntries.forEach(v=>{ m[v.ma]=(m[v.ma]||0)+1; }); return m;
+  }, [weekEntries]);
+  const weekEntriesF = useMemo(()=>{
+    const k=eq.trim().toLowerCase();
+    return weekEntries.filter(v=>{
+      const st=students.find(x=>x.ma===v.ma);
+      if(eTo && String(st?.to)!==eTo) return false;
+      if(k && !((st?.ten||v.ma).toLowerCase().includes(k))) return false;
+      return true;
+    });
+  }, [weekEntries, eq, eTo, students]);
+
   return (
     <div className="card">
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10,marginBottom:8}}>
@@ -812,14 +830,24 @@ function ThiDuaTab({students, violations, canLog, scopedMas, view, onAdd, onEdit
           </tr>; })}</tbody>
         </table></div>
         {canLog && <>
-          <h3 style={{marginTop:18}}>Các ghi nhận trong tuần {week}</h3>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10,marginTop:18,marginBottom:4}}>
+            <h3 style={{margin:0}}>Các ghi nhận trong tuần {week} ({weekEntriesF.length}/{weekEntries.length})</h3>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <input placeholder="🔍 Tìm theo tên…" style={{width:'100%',maxWidth:180,minWidth:120}} value={eq} onChange={e=>setEq(e.target.value)}/>
+              <select style={{width:'auto'}} value={eTo} onChange={e=>setETo(e.target.value)}>
+                <option value="">Tất cả các tổ</option>
+                {toOptions.map(t=><option key={t} value={t}>Tổ {t}</option>)}
+              </select>
+            </div>
+          </div>
+          <p className="hint">Học sinh có <b>2 lỗi trở lên</b> trong tuần được tô đậm và đánh dấu ⚠️ để dễ kiểm tra nhập trùng.</p>
           <div className="tbl-wrap"><table>
-            <thead><tr><th>Ngày</th><th>Học sinh</th><th>Nội dung</th><th>Điểm</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
-            <tbody>{weekEntries.length? weekEntries.map(v=>{ const st=students.find(x=>x.ma===v.ma); return <tr key={v.id}>
-              <td>{viDate(v.date)}</td><td>{st?st.ten:v.ma}</td><td>{v.text}</td>
+            <thead><tr><th>Ngày</th><th>Học sinh</th><th>Tổ</th><th>Nội dung</th><th>Điểm</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
+            <tbody>{weekEntriesF.length? weekEntriesF.map(v=>{ const st=students.find(x=>x.ma===v.ma); const dup=entryCounts[v.ma]>1; return <tr key={v.id} style={dup?{background:'var(--amberbg)'}:undefined}>
+              <td>{viDate(v.date)}</td><td>{dup?'⚠️ ':''}{st?st.ten:v.ma}{dup?' ×'+entryCounts[v.ma]:''}</td><td>Tổ {st?.to??'-'}</td><td>{v.text}</td>
               <td style={{color:v.diem<0?'var(--bad)':'var(--good)'}}>{v.diem>0?'+':''}{v.diem}</td><td className="muted">{v.note||''}</td>
               <td><button className="link" onClick={()=>onEditEntry(v,st)}>Sửa</button> · <button className="link" onClick={()=>onDelEntry(v.id)}>Xoá</button></td>
-            </tr>; }) : <tr><td colSpan="6" className="muted">Chưa có ghi nhận nào trong tuần này.</td></tr>}</tbody>
+            </tr>; }) : <tr><td colSpan="7" className="muted">Không có ghi nhận nào khớp bộ lọc.</td></tr>}</tbody>
           </table></div>
         </>}
         </>
