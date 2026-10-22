@@ -86,8 +86,7 @@ label{font-size:12px;color:var(--ink2);display:block;margin-bottom:3px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .hero{padding:40px 16px;text-align:center}
 .hero h1{font-size:30px}
-.rolecards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;max-width:860px;margin:24px auto 0}
-@media(max-width:820px){.rolecards{grid-template-columns:repeat(2,1fr);max-width:520px}}
+.rolecards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;max-width:960px;margin:24px auto 0}
 @media(max-width:640px){.rolecards{grid-template-columns:1fr}.row2{grid-template-columns:1fr}}
 @media(max-width:600px){
   .wrap{padding:14px 10px 60px}
@@ -271,6 +270,7 @@ function exportAttendanceMonthTemplate(students, attendance, monthStr){
   XLSX.writeFile(wb, 'chuyen_can_thang_'+m+'.xlsx', {cellStyles:true});
 }
 const CV_LABEL = {lop_truong:'Lớp trưởng', bi_thu:'Bí thư', to_truong:'Tổ trưởng', '':''};
+const SUBJECTS = ['Toán','Lí','Hóa','Sinh','Anh','Sử','Văn','Tin học','HĐTN','GDĐP','Thể dục','GDQP'];
 const CV_LABEL_REV = {'Lớp trưởng':'lop_truong', 'Bí thư':'bi_thu', 'Tổ trưởng':'to_truong'};
 function viDate(iso){ if(!iso) return ''; const p=String(iso).split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : iso; }
 function viMonth(ym){ if(!ym) return ''; const p=ym.split('-'); return p.length===2 ? 'Tháng '+parseInt(p[1],10)+'/'+p[0] : ym; }
@@ -421,6 +421,7 @@ const ADMIN_PASSWORD = 'gvcn2026';
 function Login({db, onLogin}){
   const [picking,setPicking] = useState(null);
   const [students,setStudents] = useState([]);
+  const [teachers,setTeachers] = useState([]);
   const [phone,setPhone] = useState('');
   const [pw,setPw] = useState('');
   const [showPw,setShowPw] = useState(false);
@@ -429,6 +430,12 @@ function Login({db, onLogin}){
   async function choose(role){
     setErr(''); setPw(''); setPhone('');
     if(role==='admin'){ setStudents([]); setPicking('admin'); return; }
+    if(role==='gv'){
+      const tdoc = await db.doc('meta/teachers').get();
+      setTeachers((tdoc.exists && tdoc.data() && tdoc.data().list) || []);
+      setPicking('gv');
+      return;
+    }
     const snap = await db.collection('students').get();
     let list = snap.docs.map(d=>d.data()).sort((a,b)=>a.stt-b.stt);
     if(role==='cb') list = list.filter(s=>s.chucvu);
@@ -450,6 +457,13 @@ function Login({db, onLogin}){
       const pwReal = (adminDoc.exists && adminDoc.data().pw) || ADMIN_PASSWORD;
       if(pw!==pwReal){ setErr('Sai mật khẩu.'); return; }
       onLogin({role:'admin', first: pw===ADMIN_PASSWORD}); return;
+    }
+    if(picking==='gv'){
+      const t = teachers.find(x=>x.phone===phone.trim());
+      if(!t){ setErr('Không tìm thấy số điện thoại này trong danh sách giáo viên. Vui lòng liên hệ GVCN.'); return; }
+      const need = t.pw || t.phone;
+      if(pw!==need){ setErr('Sai mật khẩu.'); return; }
+      onLogin({role:'gv', teacherPhone:t.phone, subject:t.subject, teacherName:t.name, first: pw===t.phone}); return;
     }
     const s = findByPhone(picking, phone);
     if(!s){ setErr('Không tìm thấy số điện thoại này trong danh sách lớp. Vui lòng kiểm tra lại hoặc liên hệ GVCN.'); return; }
@@ -473,16 +487,23 @@ function Login({db, onLogin}){
           <div className="rolecard" onClick={()=>choose('cb')}><b>Cán bộ lớp</b></div>
           <div className="rolecard" onClick={()=>choose('hs')}><b>Học sinh</b></div>
           <div className="rolecard" onClick={()=>choose('ph')}><b>Cha mẹ học sinh</b></div>
+          <div className="rolecard" onClick={()=>choose('gv')}><b>Giáo viên bộ môn</b></div>
         </div>
         {picking && (
           <div className="card" style={{maxWidth:420,margin:'22px auto 0',textAlign:'left'}}>
-            {picking!=='admin' && (students.length ? (
+            {picking==='gv' && (teachers.length ? (
+              <>
+                <label>Số điện thoại giáo viên</label>
+                <input type="tel" inputMode="numeric" placeholder="VD: 0912345678" value={phone} onChange={e=>setPhone(e.target.value)}/>
+              </>
+            ) : <p className="hint">GVCN chưa thêm giáo viên bộ môn nào. Vui lòng liên hệ GVCN.</p>)}
+            {picking!=='admin' && picking!=='gv' && (students.length ? (
               <>
                 <label>{picking==='ph'?'Số điện thoại Cha mẹ học sinh (cha, mẹ hoặc liên hệ)':'Số điện thoại liên hệ của bạn'}</label>
                 <input type="tel" inputMode="numeric" placeholder="VD: 0912345678" value={phone} onChange={e=>setPhone(e.target.value)}/>
               </>
             ) : <p className="hint">Giáo viên chưa phân công cán bộ lớp nào. Vui lòng liên hệ GVCN.</p>)}
-            {(picking==='admin' || students.length>0) && <>
+            {(picking==='admin' || (picking==='gv' && teachers.length>0) || (picking!=='gv' && students.length>0)) && <>
               <div className="field" style={{marginTop:10}}><label>Mật khẩu</label>
                 <div style={{position:'relative'}}>
                   <input type={showPw?'text':'password'} value={pw} style={{paddingRight:38}} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()}/>
@@ -632,6 +653,9 @@ function App(){
   const [tdView,setTdView] = useState('week');
   const [attView,setAttView] = useState('day');
   const [tkView,setTkView] = useState('month');
+  const [gradeSubj,setGradeSubj] = useState(SUBJECTS[0]);
+  const [rxView,setRxView] = useState('cn');
+  const [gvView,setGvView] = useState('grades');
   const [modal,setModal] = useState(null);
   const [modalSeq,setModalSeq] = useState(0);
   function openModal(m){ setModalSeq(n=>n+1); setModal(m); }
@@ -640,6 +664,9 @@ function App(){
   useEffect(()=>{ if(nudge && db){ openModal({type:'changePassword', first:true}); setNudge(false); } },[nudge,db]);
   const [weeks,setWeeks] = useState([]);
   const [rulesList,setRulesList] = useState(DEFAULT_RULES);
+  const [teachersList,setTeachersList] = useState([]);
+  const [remarks,setRemarks] = useState([]);
+  const [grades,setGrades] = useState([]);
   const [toast,setToast] = useState('');
   function showToast(msg){ setToast(msg); setTimeout(()=>setToast(cur=>cur===msg?'':cur), 2200); }
 
@@ -696,10 +723,18 @@ function App(){
   }
   async function refresh(d){
     const dd = d||db;
-    const [ss,vs,as] = await Promise.all([dd.collection('students').get(), dd.collection('violations').get(), dd.collection('attendance').get()]);
+    const [ss,vs,as,rm,tc,gr] = await Promise.all([dd.collection('students').get(), dd.collection('violations').get(), dd.collection('attendance').get(), dd.collection('remarks').get(), dd.doc('meta/teachers').get(), dd.collection('grades').get()]);
     setStudents(ss.docs.map(x=>x.data()).sort((a,b)=>a.stt-b.stt));
     setViolations(vs.docs.map(x=>({id:x.id,...x.data()})).sort((a,b)=>(b.at||0)-(a.at||0)));
     setAttendance(as.docs.map(x=>x.data()));
+    setRemarks(rm.docs.map(x=>({id:x.id,...x.data()})).sort((a,b)=>(b.at||0)-(a.at||0)));
+    setTeachersList((tc.exists && tc.data() && tc.data().list) || []);
+    setGrades(gr.docs.map(x=>({id:x.id,...x.data()})).sort((a,b)=>(b.at||0)-(a.at||0)));
+  }
+  async function saveTeachers(list){
+    await db.doc('meta/teachers').set({list});
+    setTeachersList(list);
+    showToast('Đã lưu danh sách giáo viên ✓');
   }
 
   useEffect(()=>{ if(db) refresh(db); }, [db]);
@@ -766,7 +801,7 @@ function App(){
   const me = session.ma ? students.find(s=>s.ma===session.ma) : null;
   const meChucvu = me ? me.chucvu : null;
   const restrictToTo = session.role==='cb' && meChucvu==='to_truong';
-  const roleLabel = session.role==='admin'?'Giáo viên chủ nhiệm': session.role==='cb'?(CV_LABEL[meChucvu]||'Cán bộ lớp'): session.role==='ph'?'Cha mẹ học sinh':'Học sinh';
+  const roleLabel = session.role==='admin'?'Giáo viên chủ nhiệm': session.role==='cb'?(CV_LABEL[meChucvu]||'Cán bộ lớp'): session.role==='ph'?'Cha mẹ học sinh': session.role==='gv'?('GV '+session.subject+' — '+session.teacherName):'Học sinh';
   const canEditRoster = session.role==='admin';
   const canLog = session.role==='admin' || session.role==='cb';
   const scopedStudents = restrictToTo ? students.filter(s=>s.to===me.to) : students;
@@ -780,17 +815,29 @@ function App(){
           <div className="brandwrap"><span className="logo">🎓</span><div><div className="brand">CSDL Lớp 11A2</div><div className="sub">THPT Cao Bá Quát – Quốc Oai</div></div></div>
           <div className="who">{roleLabel}{me?' · '+me.ten:''}{restrictToTo?' · Tổ '+me.to:''} <button onClick={()=>{setErr('');openModal({type:'changePassword'});}}>🔑 Đổi MK</button> <button onClick={logout}>Đăng xuất</button></div>
         </div>
-        {!(session.role==='hs' || session.role==='ph') && <div className="top2"><div className="tabs">
+        {!(session.role==='hs' || session.role==='ph' || session.role==='gv') && <div className="top2"><div className="tabs">
           <div className={"tab "+(tab==='list'?'active':'')} onClick={()=>setTab('list')}>📋 1. Hồ sơ học sinh</div>
           {canLog && <div className={"tab "+(tab==='att'?'active':'')} onClick={()=>setTab('att')}>✅ 2. Điểm danh</div>}
           <div className={"tab "+(tab==='td'?'active':'')} onClick={()=>setTab('td')}>🏆 3. Thi đua</div>
-          <div className={"tab "+(tab==='tk'?'active':'')} onClick={()=>setTab('tk')}>📊 4. Tổng kết</div>
-          {canEditRoster && <div className={"tab "+(tab==='acc'?'active':'')} onClick={()=>setTab('acc')}>🔐 5. Quản lý tài khoản</div>}
+          {canEditRoster && <div className={"tab "+(tab==='diem'?'active':'')} onClick={()=>setTab('diem')}>📐 4. Điểm số</div>}
+          {canEditRoster && <div className={"tab "+(tab==='rx'?'active':'')} onClick={()=>setTab('rx')}>📝 5. Nhận xét</div>}
+          <div className={"tab "+(tab==='tk'?'active':'')} onClick={()=>setTab('tk')}>📊 6. Tổng kết</div>
+          {canEditRoster && <div className={"tab "+(tab==='acc'?'active':'')} onClick={()=>setTab('acc')}>🔐 7. Quản lý tài khoản</div>}
         </div></div>}
       </div>
       <div className="wrap">
         {(session.role==='hs' || session.role==='ph') ? (
-          me ? <><StudentSelf s={me} violations={violations} attendance={attendance} weeks={weeks}/><ThiDuaTab students={students} violations={violations} view="week" canLog={false} weeks={weeks} isAdmin={false}/></> : <p>Không tìm thấy thông tin.</p>
+          me ? <><StudentSelf s={me} violations={violations} attendance={attendance} weeks={weeks}/><ThiDuaTab students={students} violations={violations} view="week" canLog={false} weeks={weeks} isAdmin={false}/><GradesView students={students} grades={grades} ma={me.ma}/><RemarksView students={students} remarks={remarks} ma={me.ma}/></> : <p>Không tìm thấy thông tin.</p>
+        ) : session.role==='gv' ? (
+          <>
+            <div className="tabs sub" style={{marginBottom:12}}>
+              <div className={"tab "+(gvView==='grades'?'active':'')} onClick={()=>setGvView('grades')}>📐 Điểm số</div>
+              <div className={"tab "+(gvView==='remarks'?'active':'')} onClick={()=>setGvView('remarks')}>📝 Nhận xét</div>
+            </div>
+            {gvView==='grades'
+              ? <GradesTab db={db} students={students} grades={grades} subject={session.subject} teacherName={session.teacherName} onSaved={refresh}/>
+              : <RemarksTab db={db} students={students} remarks={remarks} subject={session.subject} teacherName={session.teacherName} isAdmin={false} subjects={SUBJECTS} onSaved={refresh}/>}
+          </>
         ) : (
           <>
             {tab==='att' && <div className="tabs sub">
@@ -802,11 +849,17 @@ function App(){
             {tab==='td' && <div className="tabs sub">
               <div className={"tab "+(tdView==='rules'?'active':'')} onClick={()=>setTdView('rules')}>📕 3.1 Danh mục lỗi</div>
               <div className={"tab "+(tdView==='week'?'active':'')} onClick={()=>setTdView('week')}>📝 3.2 Nhập thi đua theo tuần</div>
-              <div className={"tab "+(tdView==='month'?'active':'')} onClick={()=>setTdView('month')}>📅 3.3 Tổng kết thi đua tháng</div>
+            </div>}
+            {tab==='diem' && <div className="tabs sub">
+              {SUBJECTS.map((sj,i)=><div key={sj} className={"tab "+(gradeSubj===sj?'active':'')} onClick={()=>setGradeSubj(sj)}>4.{i+1} {sj}</div>)}
+            </div>}
+            {tab==='rx' && <div className="tabs sub">
+              <div className={"tab "+(rxView==='cn'?'active':'')} onClick={()=>setRxView('cn')}>👩‍🏫 5.1 Nhận xét của GVCN</div>
+              <div className={"tab "+(rxView==='bm'?'active':'')} onClick={()=>setRxView('bm')}>📚 5.2 Nhận xét của GVBM</div>
             </div>}
             {tab==='tk' && <div className="tabs sub">
-              <div className={"tab "+(tkView==='month'?'active':'')} onClick={()=>setTkView('month')}>🗓️ 4.1 Tổng kết theo tháng</div>
-              <div className={"tab "+(tkView==='sem'?'active':'')} onClick={()=>setTkView('sem')}>🎓 4.2 Tổng kết học kỳ</div>
+              <div className={"tab "+(tkView==='month'?'active':'')} onClick={()=>setTkView('month')}>🗓️ 6.1 Tổng kết thi đua tháng</div>
+              <div className={"tab "+(tkView==='sem'?'active':'')} onClick={()=>setTkView('sem')}>🎓 6.2 Tổng kết thi đua học kì</div>
             </div>}
             {tab==='list' &&
               <Roster students={scopedStudents} canEditRoster={canEditRoster} db={db} onImported={refresh}
@@ -828,7 +881,10 @@ function App(){
                 onDelEntry={delViolation}
               />}
             {tab==='tk' && <SummaryTab students={scopedStudents} violations={violations} attendance={attendance} view={tkView} weeks={weeks}/>}
-            {tab==='acc' && canEditRoster && <AccountsTab students={students} db={db} onSaved={refresh}/>}
+            {tab==='diem' && canEditRoster && <GradesTab db={db} students={students} grades={grades} subject={gradeSubj} teacherName={"GVCN (GV "+gradeSubj+")"} onSaved={refresh}/>}
+            {tab==='rx' && rxView==='cn' && canEditRoster && <RemarksTab db={db} students={students} remarks={remarks} subject={null} teacherName="GVCN" isAdmin={true} subjects={SUBJECTS} fixedSubject="Chủ nhiệm" onSaved={refresh}/>}
+            {tab==='rx' && rxView==='bm' && canEditRoster && <RemarksTab db={db} students={students} remarks={remarks} subject={null} teacherName="GVCN" isAdmin={true} subjects={SUBJECTS} onSaved={refresh}/>}
+            {tab==='acc' && canEditRoster && <AccountsTab students={students} db={db} onSaved={refresh} teachersList={teachersList} subjects={SUBJECTS} onSaveTeachers={saveTeachers}/>}
           </>
         )}
       </div>
@@ -1380,7 +1436,332 @@ function SummaryTab({students, violations, attendance, view, weeks}){
   );
 }
 
-function AccountsTab({students, db, onSaved}){
+function TeacherConfigEditor({teachersList, subjects, onSaveTeachers}){
+  const [rows,setRows] = useState(teachersList);
+  const [open,setOpen] = useState(false);
+  const [busy,setBusy] = useState(false);
+  useEffect(()=>{ setRows(teachersList); }, [teachersList]);
+  function setField(i,k,v){ setRows(rs=>rs.map((r,idx)=>idx===i?{...r,[k]:v}:r)); }
+  function addRow(){ setRows(rs=>[...rs, {name:'', subject:subjects[0], phone:'', pw:''}]); }
+  function delRow(i){ setRows(rs=>rs.filter((_,idx)=>idx!==i)); }
+  async function save(){ setBusy(true); try{ await onSaveTeachers(rows); } finally { setBusy(false); } }
+  return (
+    <div className="card" style={{background:'var(--paper)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+        <h3 style={{margin:0}}>⚙️ Danh sách giáo viên bộ môn ({teachersList.length})</h3>
+        <button className="btn sec" onClick={()=>setOpen(v=>!v)}>{open?'Thu gọn':'Chỉnh sửa'}</button>
+      </div>
+      {open && <>
+        <p className="hint">Tên đăng nhập của giáo viên là số điện thoại; mật khẩu mặc định cũng là số điện thoại đó (giáo viên tự đổi sau khi đăng nhập lần đầu).</p>
+        <div className="tbl-wrap" style={{maxHeight:320}}><table>
+          <thead><tr><th>Họ tên GV</th><th>Môn</th><th>SĐT (tài khoản)</th><th></th></tr></thead>
+          <tbody>{rows.map((r,i)=>
+            <tr key={i}>
+              <td><input value={r.name} onChange={e=>setField(i,'name',e.target.value)}/></td>
+              <td><select value={r.subject} onChange={e=>setField(i,'subject',e.target.value)}>
+                {subjects.map(sj=><option key={sj} value={sj}>{sj}</option>)}
+              </select></td>
+              <td><input value={r.phone} onChange={e=>setField(i,'phone',e.target.value)}/></td>
+              <td><button className="link" onClick={()=>delRow(i)}>Xoá</button></td>
+            </tr>
+          )}</tbody>
+        </table></div>
+        <div className="actions" style={{justifyContent:'space-between'}}>
+          <button className="btn sec" onClick={addRow}>+ Thêm giáo viên</button>
+          <button className="btn" onClick={save} disabled={busy}>{busy?'Đang lưu…':'Lưu danh sách giáo viên'}</button>
+        </div>
+      </>}
+    </div>
+  );
+}
+
+function RemarksTab({db, students, remarks, subject, teacherName, isAdmin, subjects, fixedSubject, onSaved}){
+  const [selSubject,setSelSubject] = useState(subject || subjects[0]);
+  const curSubject = fixedSubject || (isAdmin ? selSubject : subject);
+  const byName = isAdmin ? (curSubject==='Toán' ? 'GVCN (GV Toán)' : curSubject==='Chủ nhiệm' ? 'GVCN' : 'GVCN') : teacherName;
+  const [q,setQ] = useState('');
+  const [drafts,setDrafts] = useState({});
+  const [saving,setSaving] = useState(false);
+  const [err,setErr] = useState('');
+
+  const filtered = useMemo(()=>{
+    const k=q.trim().toLowerCase();
+    return k ? students.filter(s=>(s.ten||'').toLowerCase().includes(k)) : students;
+  }, [students,q]);
+
+  const subjectRemarks = useMemo(()=>remarks.filter(r=>r.subject===curSubject).sort((a,b)=>(b.at||0)-(a.at||0)), [remarks, curSubject]);
+
+  async function saveAll(){
+    const entries = Object.entries(drafts).filter(([ma,txt])=>txt && txt.trim());
+    if(!entries.length){ setErr('Chưa nhập nhận xét cho học sinh nào.'); return; }
+    setErr(''); setSaving(true);
+    try{
+      const today = new Date().toISOString().slice(0,10);
+      await Promise.all(entries.map(([ma,txt])=>
+        db.collection('remarks').add({ma, subject:curSubject, text:txt.trim(), by:byName, date:today, at:Date.now()})
+      ));
+      setDrafts({});
+      await onSaved();
+    } catch(e){
+      setErr('Không lưu được, vui lòng kiểm tra kết nối mạng và thử lại.');
+    } finally { setSaving(false); }
+  }
+  async function delRemark(id){ await db.doc('remarks/'+id).delete(); await onSaved(); }
+
+  return (
+    <div className="card">
+      <div className="hdr">
+        <h3 style={{margin:0}}>{fixedSubject ? 'Nhận xét của GVCN' : isAdmin ? 'Nhận xét của GVBM' : 'Nhận xét môn '+subject+' — '+teacherName}</h3>
+        {isAdmin && !fixedSubject && <div>
+          <select style={{width:'auto'}} value={selSubject} onChange={e=>setSelSubject(e.target.value)}>
+            {subjects.map(sj=><option key={sj} value={sj}>{sj}</option>)}
+          </select>
+        </div>}
+      </div>
+
+      <div className="hdr" style={{marginTop:18}}>
+        <h3 style={{margin:0}}>Ghi nhận xét — môn {curSubject}</h3>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <input placeholder="🔍 Tìm tên…" style={{width:140,minWidth:100}} value={q} onChange={e=>setQ(e.target.value)}/>
+          <button className="btn" onClick={saveAll} disabled={saving}>{saving?'Đang lưu…':'💾 Lưu tất cả nhận xét'}</button>
+        </div>
+      </div>
+      <p className="hint">Nhập lần lượt nhận xét cho từng học sinh trong bảng rồi bấm "Lưu tất cả" — không cần chọn tên từng em một.</p>
+      {err && <div className="err">{err}</div>}
+      <div className="tbl-wrap"><table>
+        <thead><tr><th>STT</th><th>Họ tên</th><th>Ngày sinh</th><th>Nhận xét</th></tr></thead>
+        <tbody>{filtered.map(s=>
+          <tr key={s.ma}>
+            <td>{s.stt}</td><td>{s.ten}</td><td>{s.ngaysinh||'-'}</td>
+            <td><input value={drafts[s.ma]||''} placeholder="Nhập nhận xét…" style={{width:'100%',minWidth:220}} onChange={e=>setDrafts(d=>({...d,[s.ma]:e.target.value}))}/></td>
+          </tr>
+        )}</tbody>
+      </table></div>
+
+      <h3 style={{marginTop:18}}>Các nhận xét môn {curSubject} ({subjectRemarks.length})</h3>
+      <div className="tbl-wrap"><table>
+        <thead><tr><th>Ngày</th><th>Học sinh</th><th>Nội dung</th><th>Người nhận xét</th><th>Thao tác</th></tr></thead>
+        <tbody>{subjectRemarks.length? subjectRemarks.map(r=>{ const st=students.find(x=>x.ma===r.ma); return <tr key={r.id}>
+          <td>{viDate(r.date)}</td><td>{st?st.ten:r.ma}</td><td>{r.text}</td><td className="muted">{r.by}</td>
+          <td><button className="link" onClick={()=>delRemark(r.id)}>Xoá</button></td>
+        </tr>; }) : <tr><td colSpan="5" className="muted">Chưa có nhận xét nào.</td></tr>}</tbody>
+      </table></div>
+    </div>
+  );
+}
+
+function RemarksView({students, remarks, ma}){
+  const myR = useMemo(()=>remarks.filter(r=>r.ma===ma).sort((a,b)=>(b.at||0)-(a.at||0)), [remarks, ma]);
+  const bySubject = useMemo(()=>{
+    const g={}; myR.forEach(r=>{ (g[r.subject]=g[r.subject]||[]).push(r); }); return g;
+  }, [myR]);
+  return (
+    <div className="card">
+      <h3>Nhận xét của giáo viên</h3>
+      {Object.keys(bySubject).length ? Object.entries(bySubject).map(([sj,list])=>
+        <div key={sj} style={{marginBottom:14}}>
+          <p style={{fontWeight:600,marginBottom:4}}>{sj}</p>
+          <div className="tbl-wrap"><table>
+            <thead><tr><th>Ngày</th><th>Nội dung</th><th>Người nhận xét</th></tr></thead>
+            <tbody>{list.map(r=><tr key={r.id}><td>{viDate(r.date)}</td><td>{r.text}</td><td className="muted">{r.by}</td></tr>)}</tbody>
+          </table></div>
+        </div>
+      ) : <p className="muted">Chưa có nhận xét nào.</p>}
+    </div>
+  );
+}
+
+// Điểm trung bình môn học kỳ theo Thông tư 22: (tổng ĐĐGtx + 2×ĐĐGgk + 3×ĐĐGck) / (số ĐĐGtx + 5)
+// Số cột điểm thường xuyên (ĐĐGtx) riêng theo từng môn — mặc định 5, Toán 6
+const TX_COUNT = {'Toán':6};
+function txCountFor(subject){ return TX_COUNT[subject] || 5; }
+function tbMon(tx, gk, ck){
+  const txVals = (tx||[]).filter(v=>v!==null && v!=='' && v!==undefined && !isNaN(v)).map(Number);
+  let total = txVals.reduce((a,b)=>a+b,0), count = txVals.length;
+  const gkOk = gk!==null && gk!=='' && gk!==undefined && !isNaN(gk);
+  const ckOk = ck!==null && ck!=='' && ck!==undefined && !isNaN(ck);
+  if(gkOk){ total += Number(gk)*2; count += 2; }
+  if(ckOk){ total += Number(ck)*3; count += 3; }
+  if(count===0) return null;
+  return total/count;
+}
+function gradeDocId(ma,subject,hocky){ return ma+'_'+subject+'_'+hocky; }
+function exportGradesTemplate(students, grades, subject, hocky, teacherName){
+  const nTx = txCountFor(subject);
+  const rows = students.map(s=>{
+    const g = grades.find(x=>x.ma===s.ma && x.subject===subject && x.hocky===hocky) || {};
+    const tx = Array.from({length:nTx}, (_,i)=> (g.tx && g.tx[i]!=null) ? g.tx[i] : null);
+    return {s, tx, gk:g.gk??null, ck:g.ck??null};
+  });
+  const lastCol = 4 + nTx + 2; // 0-indexed: STT,Ma,Hoten,Ngaysinh,Gioitinh(0-4) + nTx + Gk + Ck, rồi ĐTB ở lastCol+1
+  const totalCol = lastCol + 1;
+  const aoa = [];
+  aoa.push(['SỞ GIÁO DỤC VÀ ĐÀO TẠO HÀ NỘI']);
+  aoa.push(['THPT CAO BÁ QUÁT-QUỐC OAI']);
+  aoa.push(['BẢNG ĐIỂM HỌC KỲ']);
+  aoa.push(['Năm học: 2026-2027 - Học kỳ: '+(hocky==='HK1'?'I':'II')]);
+  aoa.push(['Môn học: '+subject.toUpperCase()+' - GV: '+teacherName]);
+  aoa.push([]);
+  const head1 = ['STT','Mã định danh','Họ và tên','Ngày sinh','Giới tính','ĐĐGtx'];
+  for(let i=1;i<nTx;i++) head1.push(null);
+  head1.push('ĐĐGgk','ĐĐGck','ĐTBmhk');
+  aoa.push(head1);
+  const head2 = ['','','','',''];
+  for(let i=1;i<=nTx;i++) head2.push(String(i));
+  head2.push('','','');
+  aoa.push(head2);
+  rows.forEach(({s,tx,gk,ck})=>{
+    const tb = tbMon(tx,gk,ck);
+    aoa.push([s.stt, s.ma, s.ten, s.ngaysinh, s.gioitinh, ...tx, gk, ck, tb!==null?Number(tb.toFixed(1)):'']);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [
+    {s:{r:0,c:0},e:{r:0,c:3}},{s:{r:1,c:0},e:{r:1,c:3}},
+    {s:{r:2,c:0},e:{r:2,c:totalCol}},{s:{r:3,c:0},e:{r:3,c:totalCol}},{s:{r:4,c:0},e:{r:4,c:totalCol}},
+    {s:{r:6,c:0},e:{r:7,c:0}},{s:{r:6,c:1},e:{r:7,c:1}},{s:{r:6,c:2},e:{r:7,c:2}},{s:{r:6,c:3},e:{r:7,c:3}},{s:{r:6,c:4},e:{r:7,c:4}},
+    {s:{r:6,c:5},e:{r:6,c:4+nTx}},
+    {s:{r:6,c:5+nTx},e:{r:7,c:5+nTx}},{s:{r:6,c:6+nTx},e:{r:7,c:6+nTx}},{s:{r:6,c:7+nTx},e:{r:7,c:7+nTx}},
+  ];
+  ws['!cols'] = [{wch:5},{wch:16},{wch:24},{wch:11},{wch:8}, ...Array(nTx).fill({wch:5}), {wch:7},{wch:7},{wch:9}];
+  try{
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for(let R=range.s.r; R<=range.e.r; R++){
+      for(let C=range.s.c; C<=range.e.c; C++){
+        const addr = XLSX.utils.encode_cell({r:R,c:C});
+        if(!ws[addr]) ws[addr]={t:'s',v:''};
+        if(R<=4){ ws[addr].s={font:{bold:true, sz:R===2?13:11}, alignment:{horizontal:R>=2?'center':'left'}}; }
+        else if(R===6||R===7){ ws[addr].s={font:{bold:true,sz:9,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'2F6690'}}, alignment:{horizontal:'center',vertical:'center',wrapText:true}, border:BORDER_ALL}; }
+        else { ws[addr].s={border:BORDER_ALL, alignment:{horizontal:C===2?'left':'center', vertical:'center'}}; }
+      }
+    }
+  }catch(e){}
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, subject.slice(0,25));
+  XLSX.writeFile(wb, 'bang_diem_'+subject+'_'+hocky+'.xlsx', {cellStyles:true});
+}
+
+function GradesTab({db, students, grades, subject, teacherName, onSaved}){
+  const [hocky,setHocky] = useState('HK1');
+  const [q,setQ] = useState('');
+  const [drafts,setDrafts] = useState({});
+  const [saving,setSaving] = useState(false);
+  const [err,setErr] = useState('');
+  const nTx = txCountFor(subject);
+  const txIdx = Array.from({length:nTx}, (_,i)=>i);
+
+  const filtered = useMemo(()=>{
+    const k=q.trim().toLowerCase();
+    return k ? students.filter(s=>(s.ten||'').toLowerCase().includes(k)) : students;
+  }, [students,q]);
+
+  const existing = useMemo(()=>{
+    const m={}; grades.filter(g=>g.subject===subject && g.hocky===hocky).forEach(g=>{ m[g.ma]=g; }); return m;
+  }, [grades, subject, hocky]);
+
+  function getTx(ma,i){ const d=drafts[ma]; if(d && d.tx && d.tx[i]!==undefined) return d.tx[i]; const ex=existing[ma]; return (ex && ex.tx && ex.tx[i]!=null) ? ex.tx[i] : ''; }
+  function getGk(ma){ const d=drafts[ma]; if(d && d.gk!==undefined) return d.gk; const ex=existing[ma]; return (ex && ex.gk!=null) ? ex.gk : ''; }
+  function getCk(ma){ const d=drafts[ma]; if(d && d.ck!==undefined) return d.ck; const ex=existing[ma]; return (ex && ex.ck!=null) ? ex.ck : ''; }
+  function setTx(ma,i,v){ setDrafts(d=>{ const cur={...(d[ma]||{})}; const tx = cur.tx ? [...cur.tx] : txIdx.map(j=>getTx(ma,j)); tx[i]=v; return {...d,[ma]:{...cur,tx}}; }); }
+  function setGk(ma,v){ setDrafts(d=>({...d,[ma]:{...(d[ma]||{}),gk:v}})); }
+  function setCk(ma,v){ setDrafts(d=>({...d,[ma]:{...(d[ma]||{}),ck:v}})); }
+
+  async function saveAll(){
+    const mas = Object.keys(drafts);
+    if(!mas.length){ setErr('Chưa nhập điểm nào.'); return; }
+    setErr(''); setSaving(true);
+    try{
+      await Promise.all(mas.map(ma=>{
+        const tx = txIdx.map(i=>{ const v=getTx(ma,i); return v===''?null:parseFloat(v); });
+        const gkv = getGk(ma); const ckv = getCk(ma);
+        const id = gradeDocId(ma,subject,hocky);
+        return db.doc('grades/'+id).set({ma, subject, hocky, tx, gk: gkv===''?null:parseFloat(gkv), ck: ckv===''?null:parseFloat(ckv), by:teacherName, at:Date.now()});
+      }));
+      setDrafts({});
+      await onSaved();
+    } catch(e){
+      setErr('Không lưu được, vui lòng kiểm tra kết nối mạng và thử lại.');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="card">
+      <div className="hdr">
+        <h3 style={{margin:0}}><span className="secnum">4</span>Nhập điểm môn học</h3>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'nowrap',overflowX:'auto',maxWidth:'100%',paddingBottom:2}}>
+          <input placeholder="🔍 Tìm tên…" style={{width:110,minWidth:90,flexShrink:1}} value={q} onChange={e=>setQ(e.target.value)}/>
+          <button className="btn sec" style={{flexShrink:0,whiteSpace:'nowrap'}} onClick={()=>exportGradesTemplate(students, grades, subject, hocky, teacherName)}>⬇️ Xuất Excel</button>
+          <button className="btn" style={{flexShrink:0,whiteSpace:'nowrap'}} onClick={saveAll} disabled={saving}>{saving?'Đang lưu…':'💾 Ghi'}</button>
+        </div>
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:'8px 28px',alignItems:'center',background:'var(--paper)',border:'1px solid var(--line)',borderRadius:8,padding:'10px 14px',marginBottom:12,fontSize:13.5}}>
+        <span><b>Khối:</b> 11</span>
+        <span><b>Lớp:</b> 11A2</span>
+        <span><b>Môn học:</b> {subject}</span>
+        <span><b>Học kỳ:</b> <select style={{width:'auto',display:'inline-block'}} value={hocky} onChange={e=>setHocky(e.target.value)}>
+          <option value="HK1">Học kỳ 1</option><option value="HK2">Học kỳ 2</option>
+        </select></span>
+        <span><b>Giáo viên bộ môn:</b> {teacherName}</span>
+      </div>
+      <p className="hint">Nhập điểm đánh giá thường xuyên (ĐĐGtx 1–{nTx}), giữa kỳ (ĐĐGgk), cuối kỳ (ĐĐGck) cho từng em rồi bấm "Ghi". ĐTB môn tự tính theo đúng công thức Thông tư 22.</p>
+      {err && <div className="err">{err}</div>}
+      <div className="tbl-wrap"><table>
+        <thead>
+          <tr>
+            <th rowSpan="2">STT</th><th rowSpan="2">Họ tên</th>
+            <th colSpan={nTx}>ĐĐGtx</th>
+            <th rowSpan="2">ĐĐGgk</th><th rowSpan="2">ĐĐGck</th><th rowSpan="2">ĐTBmhk</th>
+          </tr>
+          <tr>{txIdx.map(i=><th key={i}>{i+1}</th>)}</tr>
+        </thead>
+        <tbody>{filtered.map(s=>{
+          const tb = tbMon(txIdx.map(i=>getTx(s.ma,i)), getGk(s.ma), getCk(s.ma));
+          return <tr key={s.ma}>
+            <td>{s.stt}</td><td>{s.ten}</td>
+            {txIdx.map(i=><td key={i}><input type="number" step="0.1" min="0" max="10" value={getTx(s.ma,i)} style={{width:48}} onChange={e=>setTx(s.ma,i,e.target.value)}/></td>)}
+            <td><input type="number" step="0.1" min="0" max="10" value={getGk(s.ma)} style={{width:52}} onChange={e=>setGk(s.ma,e.target.value)}/></td>
+            <td><input type="number" step="0.1" min="0" max="10" value={getCk(s.ma)} style={{width:52}} onChange={e=>setCk(s.ma,e.target.value)}/></td>
+            <td><b>{tb!==null?tb.toFixed(1):'-'}</b></td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+    </div>
+  );
+}
+
+function GradesView({students, grades, ma}){
+  const myG = useMemo(()=>grades.filter(g=>g.ma===ma), [grades, ma]);
+  const bySubject = useMemo(()=>{
+    const g={}; myG.forEach(x=>{ (g[x.subject]=g[x.subject]||{}); g[x.subject][x.hocky]=x; }); return g;
+  }, [myG]);
+  return (
+    <div className="card">
+      <h3>Điểm số các môn</h3>
+      {Object.keys(bySubject).length ? Object.entries(bySubject).map(([sj,hks])=>{
+        const nTx = txCountFor(sj);
+        const txIdx = Array.from({length:nTx}, (_,i)=>i);
+        return <div key={sj} style={{marginBottom:14}}>
+          <p style={{fontWeight:600,marginBottom:4}}>{sj}</p>
+          <div className="tbl-wrap"><table>
+            <thead><tr><th>Học kỳ</th>{txIdx.map(i=><th key={i}>TX{i+1}</th>)}<th>GK</th><th>CK</th><th>ĐTB môn</th></tr></thead>
+            <tbody>{['HK1','HK2'].map(hk=>{
+              const g = hks[hk];
+              const tx = txIdx.map(i=>(g && g.tx && g.tx[i]!=null) ? g.tx[i] : null);
+              const tb = g ? tbMon(tx, g.gk, g.ck) : null;
+              return <tr key={hk}>
+                <td>{hk==='HK1'?'Học kỳ I':'Học kỳ II'}</td>
+                {tx.map((v,i)=><td key={i}>{v!=null?v:'-'}</td>)}
+                <td>{g?.gk!=null?g.gk:'-'}</td><td>{g?.ck!=null?g.ck:'-'}</td>
+                <td><b>{tb!==null?tb.toFixed(1):'-'}</b></td>
+              </tr>;
+            })}</tbody>
+          </table></div>
+        </div>;
+      }) : <p className="muted">Chưa có điểm nào.</p>}
+    </div>
+  );
+}
+
+function AccountsTab({students, db, onSaved, teachersList, subjects, onSaveTeachers}){
   const [busy,setBusy] = useState('');
   async function resetPw(ma, field, value){
     setBusy(ma+field);
@@ -1404,13 +1785,14 @@ function AccountsTab({students, db, onSaved}){
   return (
     <div className="card">
       <div className="hdr">
-        <h3><span className="secnum">5</span>Quản lý tài khoản</h3>
+        <h3><span className="secnum">7</span>Quản lý tài khoản</h3>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'nowrap',overflowX:'auto',maxWidth:'100%',paddingBottom:2}}>
           <button className="btn sec" style={{flexShrink:0,whiteSpace:'nowrap'}} onClick={resetAdminPw}>Đặt lại MK GVCN mặc định</button>
           <button className="btn sec" style={{flexShrink:0,whiteSpace:'nowrap'}} onClick={exportPasswords}>⬇️ Xuất Excel tài khoản</button>
         </div>
       </div>
-      <p className="muted">Tên đăng nhập là <b>số điện thoại liên hệ</b> (học sinh/CBL dùng SĐT liên hệ; phụ huynh dùng SĐT cha, mẹ hoặc SĐT liên hệ — số nào đã lưu trong hồ sơ đều đăng nhập được). Mật khẩu hiển thị dưới đây là mật khẩu HIỆN TẠI. Bấm "Đặt lại mặc định" để trả về ngày sinh (học sinh) / SĐT liên hệ (phụ huynh).</p>
+      <TeacherConfigEditor teachersList={teachersList} subjects={subjects} onSaveTeachers={onSaveTeachers}/>
+      <p className="muted" style={{marginTop:14}}>Tên đăng nhập là <b>số điện thoại liên hệ</b> (học sinh/CBL dùng SĐT liên hệ; phụ huynh dùng SĐT cha, mẹ hoặc SĐT liên hệ — số nào đã lưu trong hồ sơ đều đăng nhập được). Mật khẩu hiển thị dưới đây là mật khẩu HIỆN TẠI. Bấm "Đặt lại mặc định" để trả về ngày sinh (học sinh) / SĐT liên hệ (phụ huynh).</p>
       {noPhone.length>0 && <p className="err">⚠️ {noPhone.length} học sinh chưa có SĐT liên hệ ({noPhone.map(s=>s.ten).join(', ')}) — các em này chưa đăng nhập được bằng số điện thoại, vào "Sửa hồ sơ" để bổ sung.</p>}
       <div className="tbl-wrap"><table>
         <thead><tr><th>STT</th><th>Họ tên</th><th>Chức vụ</th><th>SĐT đăng nhập (HS)</th><th>MK Học sinh</th><th>SĐT đăng nhập (CMHS)</th><th>MK CMHS</th><th>Thao tác</th></tr></thead>
