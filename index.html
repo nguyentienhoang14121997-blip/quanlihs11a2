@@ -429,6 +429,7 @@ function Login({db, onLogin}){
 
   async function choose(role){
     setErr(''); setPw(''); setPhone('');
+    if(role==='khach'){ onLogin({role:'khach'}); return; }
     if(role==='admin'){ setStudents([]); setPicking('admin'); return; }
     if(role==='gv'){
       const tdoc = await db.doc('meta/teachers').get();
@@ -488,6 +489,7 @@ function Login({db, onLogin}){
           <div className="rolecard" onClick={()=>choose('hs')}><b>Học sinh</b></div>
           <div className="rolecard" onClick={()=>choose('ph')}><b>Cha mẹ học sinh</b></div>
           <div className="rolecard" onClick={()=>choose('gv')}><b>Giáo viên bộ môn</b></div>
+          <div className="rolecard" onClick={()=>choose('khach')}><b>Tài khoản khách</b></div>
         </div>
         {picking && (
           <div className="card" style={{maxWidth:420,margin:'22px auto 0',textAlign:'left'}}>
@@ -801,7 +803,7 @@ function App(){
   const me = session.ma ? students.find(s=>s.ma===session.ma) : null;
   const meChucvu = me ? me.chucvu : null;
   const restrictToTo = session.role==='cb' && meChucvu==='to_truong';
-  const roleLabel = session.role==='admin'?'Giáo viên chủ nhiệm': session.role==='cb'?(CV_LABEL[meChucvu]||'Cán bộ lớp'): session.role==='ph'?'Cha mẹ học sinh': session.role==='gv'?('GV '+session.subject+' — '+session.teacherName):'Học sinh';
+  const roleLabel = session.role==='admin'?'Giáo viên chủ nhiệm': session.role==='cb'?(CV_LABEL[meChucvu]||'Cán bộ lớp'): session.role==='ph'?'Cha mẹ học sinh': session.role==='gv'?('GV '+session.subject+' — '+session.teacherName): session.role==='khach'?'Khách (chỉ xem)':'Học sinh';
   const canEditRoster = session.role==='admin';
   const canLog = session.role==='admin' || session.role==='cb';
   const scopedStudents = restrictToTo ? students.filter(s=>s.to===me.to) : students;
@@ -813,7 +815,7 @@ function App(){
       <div className="top">
         <div className="top1">
           <div className="brandwrap"><span className="logo">🎓</span><div><div className="brand">CSDL Lớp 11A2</div><div className="sub">THPT Cao Bá Quát – Quốc Oai</div></div></div>
-          <div className="who">{roleLabel}{me?' · '+me.ten:''}{restrictToTo?' · Tổ '+me.to:''} <button onClick={()=>{setErr('');openModal({type:'changePassword'});}}>🔑 Đổi MK</button> <button onClick={logout}>Đăng xuất</button></div>
+          <div className="who">{roleLabel}{me?' · '+me.ten:''}{restrictToTo?' · Tổ '+me.to:''} {session.role!=='khach' && <button onClick={()=>{setErr('');openModal({type:'changePassword'});}}>🔑 Đổi MK</button>} <button onClick={logout}>{session.role==='khach'?'Thoát':'Đăng xuất'}</button></div>
         </div>
         {!(session.role==='hs' || session.role==='ph' || session.role==='gv') && <div className="top2"><div className="tabs">
           <div className={"tab "+(tab==='list'?'active':'')} onClick={()=>setTab('list')}>📋 1. Hồ sơ học sinh</div>
